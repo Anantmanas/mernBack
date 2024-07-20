@@ -1,0 +1,111 @@
+body {
+  margin: 0;
+  padding: 0;
+  font-family: "Roboto", sans-serif;
+  background-size: cover;
+  background-attachment: fixed;
+  background-color: #e5e5f7;
+  opacity: 0.8;
+  background-image: radial-gradient(#444cf7 0.5px, #e5e5f7 0.5px);
+  background-size: 10px 10px;
+}
+
+.App {
+  text-align: center;
+  padding: 20px;
+}
+
+h1 {
+  color: #1f3a93;
+}
+
+ul {
+  list-style-type: none;
+  padding: 0;
+  max-width: 600px;
+  margin: 20px auto;
+}
+
+li {
+  background: #ffffff;
+  color: #1f3a93;
+  margin: 10px 0;
+  padding: 15px 20px;
+  border-radius: 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  position: relative;
+  animation: bubble 0.3s ease;
+  transition: transform 0.3s;
+}
+
+li strong {
+  color: #000000;
+}
+
+li::after {
+  content: "";
+  position: absolute;
+  bottom: -10px;
+  left: 20px;
+  width: 20px;
+  height: 20px;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: -10px 10px 0 10px #ffffff;
+  z-index: -1;
+  display: none;
+}
+
+li:hover {
+  transform: scale(1.02);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+}
+
+@keyframes bubble {
+  0% {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+input {
+  padding: 10px;
+  margin-right: 10px;
+  border: 1px solid #1f3a93;
+  border-radius: 5px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+input:focus {
+  outline: none;
+  border-color: #6ba9ff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+button {
+  padding: 10px 20px;
+  background-color: #1f3a93;
+  color: #ffffff;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: background-color 0.3s, transform 0.3s, box-shadow 0.3s;
+}
+
+button:hover {
+  background-color: #6ba9ff;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+button:active {
+  background-color: #4a82d1;
+  transform: translateY(0);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
