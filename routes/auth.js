@@ -118,7 +118,7 @@ router.get(
   (req, res) => {
     const token = generateToken(req.user.id, req.user.name);
     res.redirect(
-      `http://localhost:3000/auth/success?token=${token}&success=true`
+      `https://mernfront-agkd.onrender.com/auth/success?token=${token}&success=true`
     );
   }
 );
@@ -135,7 +135,7 @@ router.get(
   (req, res) => {
     const token = generateToken(req.user.id, req.user.name);
     res.redirect(
-      `http://localhost:3000/auth/success?token=${token}&success=true`
+      `https://mernfront-agkd.onrender.com/auth/success?token=${token}&success=true`
     );
   }
 );
