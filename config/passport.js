@@ -3,74 +3,81 @@ const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const GitHubStrategy = require("passport-github2").Strategy;
 const User = require("../models/User");
 require("dotenv").config();
-passport.use(
-  new GoogleStrategy(
-    {
-      clientID: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: "https://mernback-lsed.onrender.com/auth/google/callback",
-    },
-    async (accessToken, refreshToken, profile, done) => {
-      const { id, emails, displayName } = profile;
-      const email = emails[0].value;
-      try {
-        let user = await User.findOne({ googleId: id });
-        if (!user) {
-          user = await User.findOne({ email });
-          if (!user) {
-            user = new User({
-              googleId: id,
-              email,
-              name: displayName,
-            });
-            await user.save();
-          } else {
-            user.googleId = id;
-            await user.save();
-          }
-        }
-        done(null, user);
-      } catch (error) {
-        done(error, null);
-      }
-    }
-  )
-);
+const BACKEND_BASE_URL =
+  process.env.BACKEND_BASE_URL || "http://localhost:5000";
 
-passport.use(
-  new GitHubStrategy(
-    {
-      clientID: process.env.GITHUB_CLIENT_ID,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET,
-      callbackURL: "https://mernback-lsed.onrender.com/auth/github/callback",
-    },
-    async (accessToken, refreshToken, profile, done) => {
-      const { id, emails, displayName, username } = profile;
-      const email =
-        (emails && emails[0] && emails[0].value) || `${username}@github.com`;
-      try {
-        let user = await User.findOne({ githubId: id });
-        if (!user) {
-          user = await User.findOne({ email });
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  passport.use(
+    new GoogleStrategy(
+      {
+        clientID: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        callbackURL: `${BACKEND_BASE_URL}/auth/google/callback`,
+      },
+      async (accessToken, refreshToken, profile, done) => {
+        const { id, emails, displayName } = profile;
+        const email = emails[0].value;
+        try {
+          let user = await User.findOne({ googleId: id });
           if (!user) {
-            user = new User({
-              githubId: id,
-              email,
-              name: displayName || username,
-            });
-            await user.save();
-          } else {
-            user.githubId = id;
-            await user.save();
+            user = await User.findOne({ email });
+            if (!user) {
+              user = new User({
+                googleId: id,
+                email,
+                name: displayName,
+              });
+              await user.save();
+            } else {
+              user.googleId = id;
+              await user.save();
+            }
           }
+          done(null, user);
+        } catch (error) {
+          done(error, null);
         }
-        done(null, user);
-      } catch (error) {
-        done(error, null);
       }
-    }
-  )
-);
+    )
+  );
+}
+
+if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
+  passport.use(
+    new GitHubStrategy(
+      {
+        clientID: process.env.GITHUB_CLIENT_ID,
+        clientSecret: process.env.GITHUB_CLIENT_SECRET,
+        callbackURL: `${BACKEND_BASE_URL}/auth/github/callback`,
+      },
+      async (accessToken, refreshToken, profile, done) => {
+        const { id, emails, displayName, username } = profile;
+        const email =
+          (emails && emails[0] && emails[0].value) || `${username}@github.com`;
+        try {
+          let user = await User.findOne({ githubId: id });
+          if (!user) {
+            user = await User.findOne({ email });
+            if (!user) {
+              user = new User({
+                githubId: id,
+                email,
+                name: displayName || username,
+              });
+              await user.save();
+            } else {
+              user.githubId = id;
+              await user.save();
+            }
+          }
+          done(null, user);
+        } catch (error) {
+          done(error, null);
+        }
+      }
+    )
+  );
+}
 
 passport.serializeUser((user, done) => {
   done(null, user.id);
