@@ -17,7 +17,7 @@ app.use(
   cors({
     origin: FRONTEND_ORIGIN,
     credentials: true,
-  })
+  }),
 );
 app.use(express.json());
 
@@ -30,7 +30,7 @@ const userSchema = new mongoose.Schema(
     password: { type: String, required: true },
     username: { type: String, default: "" },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 const messageSchema = new mongoose.Schema(
@@ -38,7 +38,7 @@ const messageSchema = new mongoose.Schema(
     user: { type: String, required: true, trim: true },
     message: { type: String, required: true, trim: true },
   },
-  { timestamps: { createdAt: "timestamp", updatedAt: false } }
+  { timestamps: { createdAt: "timestamp", updatedAt: false } },
 );
 
 const User = mongoose.model("User", userSchema);
@@ -195,7 +195,7 @@ app.post("/auth/set-username", authMiddleware, async (req, res) => {
       const updated = await User.findByIdAndUpdate(
         req.user.id,
         { username: safeUsername },
-        { new: true }
+        { new: true },
       );
       if (!updated) {
         return res.status(404).json({ msg: "User not found." });
@@ -226,7 +226,7 @@ app.get("/messages", async (_req, res) => {
       return res.json(messages);
     }
     const ordered = [...memoryMessages].sort(
-      (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+      (a, b) => new Date(a.timestamp) - new Date(b.timestamp),
     );
     return res.json(ordered);
   } catch (error) {
