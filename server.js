@@ -10,7 +10,7 @@ const authRoutes = require("./routes/auth");
 require("dotenv").config();
 require("./config/passport");
 const ChatMessage = require("./models/Chat");
-const jwt = require("jsonwebtoken");
+const User = require("./models/User");
 const authMiddleware = require("./middleware/auth");
 
 const app = express();
@@ -33,6 +33,29 @@ if (!fs.existsSync(uploadsDir)) {
 
 let isMongoConnected = false;
 const memoryMessages = [];
+
+const normalizeHandle = (s) => String(s || "").trim().toLowerCase();
+
+/** Chat display name: custom username when set, else account name (matches client + delete checks) */
+async function chatHandleFromTokenUser(req) {
+  const userId = req.user.userId;
+  const fallback = String(req.user.name || "").trim();
+  if (!isMongoConnected) {
+    const mem =
+      typeof authRoutes.findMemoryUserById === "function"
+        ? authRoutes.findMemoryUserById(userId)
+        : null;
+    if (!mem) return fallback;
+    return String(mem.customUsername || mem.name || "").trim() || fallback;
+  }
+  try {
+    const u = await User.findById(userId).select("customUsername name").lean();
+    if (!u) return fallback;
+    return String(u.customUsername || u.name || "").trim() || fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 app.use(
   cors({
@@ -176,7 +199,7 @@ app.post(
   handleUpload,
   async (req, res) => {
     try {
-      const user = req.user?.name;
+      const user = await chatHandleFromTokenUser(req);
       const uploadedFile = req.file;
       const caption = (req.body?.message || "").trim();
 
@@ -231,14 +254,17 @@ app.post(
 app.delete("/messages/:id", authMiddleware, async (req, res) => {
   try {
     const messageId = req.params.id;
-    const username = req.user.name;
+    const chatHandle = await chatHandleFromTokenUser(req);
 
     if (!isMongoConnected) {
       const messageIndex = memoryMessages.findIndex((m) => m._id === messageId);
       if (messageIndex === -1) {
         return res.status(404).json({ error: "Message not found" });
       }
-      if (memoryMessages[messageIndex].user !== username) {
+      if (
+        normalizeHandle(memoryMessages[messageIndex].user) !==
+        normalizeHandle(chatHandle)
+      ) {
         return res
           .status(403)
           .json({ error: "Unauthorized to delete this message" });
@@ -254,7 +280,7 @@ app.delete("/messages/:id", authMiddleware, async (req, res) => {
     const message = await ChatMessage.findById(messageId);
     if (!message) return res.status(404).json({ error: "Message not found" });
 
-    if (message.user !== username) {
+    if (normalizeHandle(message.user) !== normalizeHandle(chatHandle)) {
       return res
         .status(403)
         .json({ error: "Unauthorized to delete this message" });

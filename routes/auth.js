@@ -274,4 +274,8 @@ router.post("/logout", (req, res) => {
   }
 });
 
+/** Used by server.js (memory mode) to resolve chat handle vs JWT display name */
+router.findMemoryUserById = (userId) =>
+  memoryUsers.find((u) => String(u.id) === String(userId)) || null;
+
 module.exports = router;

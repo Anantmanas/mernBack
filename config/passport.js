@@ -4,7 +4,7 @@ const GitHubStrategy = require("passport-github2").Strategy;
 const User = require("../models/User");
 require("dotenv").config();
 const BACKEND_BASE_URL =
-  process.env.BACKEND_BASE_URL || "http://localhost:5000";
+  process.env.BACKEND_BASE_URL || "https://mernback-lsed.onrender.com";
 
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   passport.use(
@@ -37,8 +37,8 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
         } catch (error) {
           done(error, null);
         }
-      }
-    )
+      },
+    ),
   );
 }
 
@@ -74,8 +74,8 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
         } catch (error) {
           done(error, null);
         }
-      }
-    )
+      },
+    ),
   );
 }
 
