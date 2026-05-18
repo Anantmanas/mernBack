@@ -5,6 +5,23 @@ const User = require("../models/User");
 require("dotenv").config();
 const BACKEND_BASE_URL =
   (process.env.BACKEND_BASE_URL || "https://mernback-lsed.onrender.com").replace(/\/$/, "");
+const oauthMemoryUsers = new Map();
+
+const isMongoConnected = () => require("mongoose").connection.readyState === 1;
+
+const memoryOAuthUser = ({ provider, providerId, email, name }) => {
+  const id = `${provider}:${providerId}`;
+  const existing = oauthMemoryUsers.get(id);
+  const user = {
+    id,
+    _id: id,
+    email,
+    name: name || "User",
+    customUsername: existing?.customUsername || "",
+  };
+  oauthMemoryUsers.set(id, user);
+  return user;
+};
 
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   passport.use(
@@ -19,6 +36,18 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
         const email = emails?.[0]?.value;
         if (!email) return done(new Error("Google profile did not include an email"), null);
         try {
+          if (!isMongoConnected()) {
+            return done(
+              null,
+              memoryOAuthUser({
+                provider: "google",
+                providerId: id,
+                email,
+                name: displayName,
+              }),
+            );
+          }
+
           let user = await User.findOne({ googleId: id });
           if (!user) {
             user = await User.findOne({ email });
@@ -56,6 +85,18 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
         const email =
           (emails && emails[0] && emails[0].value) || `${username}@github.com`;
         try {
+          if (!isMongoConnected()) {
+            return done(
+              null,
+              memoryOAuthUser({
+                provider: "github",
+                providerId: id,
+                email,
+                name: displayName || username,
+              }),
+            );
+          }
+
           let user = await User.findOne({ githubId: id });
           if (!user) {
             user = await User.findOne({ email });

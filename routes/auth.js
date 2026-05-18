@@ -28,6 +28,22 @@ const generateToken = (userId, name) => {
 
 const useMongo = () => mongoose.connection.readyState === 1;
 
+const ensureMemoryUser = ({ id, name = "User", email = "" }) => {
+  const safeId = String(id);
+  let user = memoryUsers.find((u) => String(u.id) === safeId);
+  if (!user) {
+    user = {
+      id: safeId,
+      name: String(name || "User").trim() || "User",
+      email: String(email || `${safeId}@oauth.local`).toLowerCase().trim(),
+      password: "",
+      customUsername: "",
+    };
+    memoryUsers.push(user);
+  }
+  return user;
+};
+
 // Register
 router.post("/signup", async (req, res) => {
   const { name, email, password } = req.body;
@@ -118,31 +134,35 @@ router.post("/validate-token", (req, res) => {
 router.post("/set-username", authMiddleware, async (req, res) => {
   const { username } = req.body;
   const userId = req.user.userId;
+  const safeUsername = String(username || "").trim();
 
-  if (!username) {
+  if (!safeUsername) {
     return res.status(400).json({ msg: "Username is required" });
   }
 
   try {
-    if (useMongo()) {
+    if (useMongo() && mongoose.Types.ObjectId.isValid(userId)) {
       const user = await User.findById(userId);
       if (!user) {
         return res.status(404).json({ msg: "User not found" });
       }
 
-      user.customUsername = username;
+      user.customUsername = safeUsername;
       await user.save();
 
-      return res.json({ customUsername: username });
+      return res.json({ customUsername: safeUsername });
     }
 
     const index = memoryUsers.findIndex((u) => u.id === userId);
     if (index === -1) {
-      return res.status(404).json({ msg: "User not found" });
+      ensureMemoryUser({ id: userId, name: req.user.name });
+      const createdIndex = memoryUsers.findIndex((u) => u.id === userId);
+      memoryUsers[createdIndex].customUsername = safeUsername;
+      return res.json({ customUsername: safeUsername });
     }
 
-    memoryUsers[index].customUsername = username;
-    return res.json({ customUsername: username });
+    memoryUsers[index].customUsername = safeUsername;
+    return res.json({ customUsername: safeUsername });
   } catch (err) {
     console.error("Error setting username:", err);
     res.status(500).json({ msg: "Server error" });
@@ -153,7 +173,7 @@ router.post("/set-username", authMiddleware, async (req, res) => {
 router.get("/check-username", authMiddleware, async (req, res) => {
   try {
     const userId = req.user.userId;
-    if (useMongo()) {
+    if (useMongo() && mongoose.Types.ObjectId.isValid(userId)) {
       const user = await User.findById(userId);
       if (!user) {
         return res.status(404).json({ msg: "User not found" });
@@ -167,7 +187,11 @@ router.get("/check-username", authMiddleware, async (req, res) => {
 
     const memoryUser = memoryUsers.find((u) => u.id === userId);
     if (!memoryUser) {
-      return res.status(404).json({ msg: "User not found" });
+      ensureMemoryUser({ id: userId, name: req.user.name });
+      return res.json({
+        hasCustomUsername: false,
+        username: "",
+      });
     }
 
     return res.json({
@@ -187,11 +211,6 @@ router.get("/google", (req, res, next) => {
       .status(503)
       .json({ msg: "Google OAuth not configured on this server." });
   }
-  if (!useMongo()) {
-    return res
-      .status(503)
-      .json({ msg: "Google OAuth unavailable while database is disconnected." });
-  }
   return passport.authenticate("google", { scope: ["profile", "email"] })(
     req,
     res,
@@ -204,11 +223,6 @@ router.get("/google/callback", (req, res, next) => {
     return res
       .status(503)
       .json({ msg: "Google OAuth not configured on this server." });
-  }
-  if (!useMongo()) {
-    return res
-      .status(503)
-      .json({ msg: "Google OAuth unavailable while database is disconnected." });
   }
   return passport.authenticate("google", { session: false }, (err, user) => {
     if (err) {
@@ -230,11 +244,6 @@ router.get("/github", (req, res, next) => {
       .status(503)
       .json({ msg: "GitHub OAuth not configured on this server." });
   }
-  if (!useMongo()) {
-    return res
-      .status(503)
-      .json({ msg: "GitHub OAuth unavailable while database is disconnected." });
-  }
   return passport.authenticate("github", { scope: ["user:email"] })(
     req,
     res,
@@ -247,11 +256,6 @@ router.get("/github/callback", (req, res, next) => {
     return res
       .status(503)
       .json({ msg: "GitHub OAuth not configured on this server." });
-  }
-  if (!useMongo()) {
-    return res
-      .status(503)
-      .json({ msg: "GitHub OAuth unavailable while database is disconnected." });
   }
   return passport.authenticate("github", { session: false }, (err, user) => {
     if (err) {
