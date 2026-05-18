@@ -3,8 +3,21 @@ const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const GitHubStrategy = require("passport-github2").Strategy;
 const User = require("../models/User");
 require("dotenv").config();
-const BACKEND_BASE_URL =
-  (process.env.BACKEND_BASE_URL || "https://mernback-lsed.onrender.com").replace(/\/$/, "");
+
+const resolveBackendBaseUrl = () => {
+  const configuredUrl = process.env.BACKEND_BASE_URL;
+  const renderUrl = process.env.RENDER_EXTERNAL_URL;
+  const fallbackUrl = "https://mernback-lsed.onrender.com";
+  const rawUrl = configuredUrl || renderUrl || fallbackUrl;
+
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(rawUrl)) {
+    return (renderUrl || fallbackUrl).replace(/\/$/, "");
+  }
+
+  return rawUrl.replace(/\/$/, "");
+};
+
+const BACKEND_BASE_URL = resolveBackendBaseUrl();
 const oauthMemoryUsers = new Map();
 
 const isMongoConnected = () => require("mongoose").connection.readyState === 1;

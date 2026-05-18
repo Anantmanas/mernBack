@@ -22,7 +22,12 @@ const uploadsDir = path.join(__dirname, "uploads");
 // #region agent log helper
 const _dbgLog = (payload) => {
   try {
-    const line = JSON.stringify({ sessionId: "7fa3ab", timestamp: Date.now(), ...payload }) + "\n";
+    const line =
+      JSON.stringify({
+        sessionId: "7fa3ab",
+        timestamp: Date.now(),
+        ...payload,
+      }) + "\n";
     fs.appendFileSync(path.join(__dirname, "../debug-7fa3ab.log"), line);
   } catch (_) {}
 };
@@ -35,7 +40,10 @@ if (!fs.existsSync(uploadsDir)) {
 let isMongoConnected = false;
 const memoryMessages = [];
 
-const normalizeHandle = (s) => String(s || "").trim().toLowerCase();
+const normalizeHandle = (s) =>
+  String(s || "")
+    .trim()
+    .toLowerCase();
 
 /** Chat display name: custom username when set, else account name (matches client + delete checks) */
 async function chatHandleFromTokenUser(req) {
@@ -69,7 +77,10 @@ app.set("trust proxy", 1);
 app.use("/uploads", express.static(uploadsDir));
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || process.env.JWT_SECRET || "chatroom_session_secret",
+    secret:
+      process.env.SESSION_SECRET ||
+      process.env.JWT_SECRET ||
+      "chatroom_session_secret",
     resave: false,
     saveUninitialized: true,
     cookie: {
@@ -133,15 +144,32 @@ app.get("/messages", async (req, res) => {
 
 app.post("/messages", authMiddleware, async (req, res) => {
   try {
-    const { user, message = "", fileUrl = "", fileName = "", fileType = "", fileSize = 0 } =
-      req.body;
+    const {
+      user,
+      message = "",
+      fileUrl = "",
+      fileName = "",
+      fileType = "",
+      fileSize = 0,
+    } = req.body;
     const senderId = String(req.user?.userId || "");
     const chatHandle = await chatHandleFromTokenUser(req);
     const displayUser = String(user || chatHandle || "").trim();
 
-    // #region agent log
-    _dbgLog({ runId: "initial", hypothesisId: "H4", location: "server.js:POST /messages", message: "message POST payload", data: { hasUser: !!user, hasMessage: !!(message || "").trim(), hasFileUrl: !!fileUrl, isMongoConnected, dburiConfigured: !!dburi } });
-    // #endregion
+    _dbgLog({
+      runId: "initial",
+      hypothesisId: "H4",
+      location: "server.js:POST /messages",
+      message: "message POST payload",
+      data: {
+        hasUser: !!user,
+        hasMessage: !!(message || "").trim(),
+        hasFileUrl: !!fileUrl,
+        isMongoConnected,
+        dburiConfigured: !!dburi,
+      },
+    });
+
     if (!displayUser || (!message.trim() && !fileUrl)) {
       return res
         .status(400)
@@ -185,8 +213,17 @@ app.post("/messages", authMiddleware, async (req, res) => {
 
 const handleUpload = (req, res, next) => {
   upload.single("file")(req, res, (err) => {
-    // #region agent log
-    if (err) _dbgLog({ runId: "initial", hypothesisId: "H3", location: "server.js:handleUpload", message: "multer error", data: { errCode: err?.code || null, errMessage: (err?.message || "").slice(0, 200) } });
+    if (err)
+      _dbgLog({
+        runId: "initial",
+        hypothesisId: "H3",
+        location: "server.js:handleUpload",
+        message: "multer error",
+        data: {
+          errCode: err?.code || null,
+          errMessage: (err?.message || "").slice(0, 200),
+        },
+      });
     // #endregion
     if (err instanceof multer.MulterError) {
       if (err.code === "LIMIT_FILE_SIZE") {
@@ -196,55 +233,51 @@ const handleUpload = (req, res, next) => {
     }
     if (err) {
       return res.status(400).json({
-        error: err.message === "Unsupported file type" ? err.message : "Upload failed",
+        error:
+          err.message === "Unsupported file type"
+            ? err.message
+            : "Upload failed",
       });
     }
     next();
   });
 };
 
-app.post(
-  "/messages/upload",
-  authMiddleware,
-  handleUpload,
-  async (req, res) => {
-    try {
-      const user = await chatHandleFromTokenUser(req);
-      const uploadedFile = req.file;
-      const caption = (req.body?.message || "").trim();
+app.post("/messages/upload", authMiddleware, handleUpload, async (req, res) => {
+  try {
+    const user = await chatHandleFromTokenUser(req);
+    const uploadedFile = req.file;
+    const caption = (req.body?.message || "").trim();
 
-      // #region agent log
-      _dbgLog({ runId: "initial", hypothesisId: "H3", location: "server.js:POST /messages/upload", message: "upload handler inputs", data: { hasUser: !!user, usernameLen: (user || "").length, hasFile: !!uploadedFile, fileMime: uploadedFile?.mimetype || null, isMongoConnected } });
-      // #endregion
+    _dbgLog({
+      runId: "initial",
+      hypothesisId: "H3",
+      location: "server.js:POST /messages/upload",
+      message: "upload handler inputs",
+      data: {
+        hasUser: !!user,
+        usernameLen: (user || "").length,
+        hasFile: !!uploadedFile,
+        fileMime: uploadedFile?.mimetype || null,
+        isMongoConnected,
+      },
+    });
 
-      if (!user) {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
+    if (!user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
 
-      if (!uploadedFile) {
-        return res.status(400).json({ error: "No file uploaded" });
-      }
+    if (!uploadedFile) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
 
-      const fileUrl = `${req.protocol}://${req.get("host")}/uploads/${uploadedFile.filename}`;
-      const fileMessage = caption || `Shared a file: ${uploadedFile.originalname}`;
+    const fileUrl = `${req.protocol}://${req.get("host")}/uploads/${uploadedFile.filename}`;
+    const fileMessage =
+      caption || `Shared a file: ${uploadedFile.originalname}`;
 
-      if (!isMongoConnected) {
-        const newMessage = {
-          _id: new mongoose.Types.ObjectId().toString(),
-          user,
-          senderId: String(req.user?.userId || ""),
-          message: fileMessage,
-          fileUrl,
-          fileName: uploadedFile.originalname,
-          fileType: uploadedFile.mimetype,
-          fileSize: uploadedFile.size,
-          timestamp: new Date().toISOString(),
-        };
-        memoryMessages.push(newMessage);
-        return res.status(201).json(newMessage);
-      }
-
-      const chatMessage = new ChatMessage({
+    if (!isMongoConnected) {
+      const newMessage = {
+        _id: new mongoose.Types.ObjectId().toString(),
         user,
         senderId: String(req.user?.userId || ""),
         message: fileMessage,
@@ -252,16 +285,29 @@ app.post(
         fileName: uploadedFile.originalname,
         fileType: uploadedFile.mimetype,
         fileSize: uploadedFile.size,
-      });
-
-      await chatMessage.save();
-      return res.status(201).json(chatMessage);
-    } catch (error) {
-      console.error("Error uploading file:", error);
-      return res.status(500).json({ error: "File upload failed" });
+        timestamp: new Date().toISOString(),
+      };
+      memoryMessages.push(newMessage);
+      return res.status(201).json(newMessage);
     }
-  },
-);
+
+    const chatMessage = new ChatMessage({
+      user,
+      senderId: String(req.user?.userId || ""),
+      message: fileMessage,
+      fileUrl,
+      fileName: uploadedFile.originalname,
+      fileType: uploadedFile.mimetype,
+      fileSize: uploadedFile.size,
+    });
+
+    await chatMessage.save();
+    return res.status(201).json(chatMessage);
+  } catch (error) {
+    console.error("Error uploading file:", error);
+    return res.status(500).json({ error: "File upload failed" });
+  }
+});
 
 app.delete("/messages/:id", authMiddleware, async (req, res) => {
   try {
@@ -275,7 +321,8 @@ app.delete("/messages/:id", authMiddleware, async (req, res) => {
         return res.status(404).json({ error: "Message not found" });
       }
       const message = memoryMessages[messageIndex];
-      const ownsById = message.senderId && String(message.senderId) === requesterId;
+      const ownsById =
+        message.senderId && String(message.senderId) === requesterId;
       const ownsLegacy =
         normalizeHandle(message.user) === normalizeHandle(chatHandle) ||
         normalizeHandle(message.user) === normalizeHandle(req.user?.name);
@@ -295,7 +342,8 @@ app.delete("/messages/:id", authMiddleware, async (req, res) => {
     const message = await ChatMessage.findById(messageId);
     if (!message) return res.status(404).json({ error: "Message not found" });
 
-    const ownsById = message.senderId && String(message.senderId) === requesterId;
+    const ownsById =
+      message.senderId && String(message.senderId) === requesterId;
     const ownsLegacy =
       normalizeHandle(message.user) === normalizeHandle(chatHandle) ||
       normalizeHandle(message.user) === normalizeHandle(req.user?.name);
@@ -321,9 +369,17 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 app.post("/api/get-suggestions", async (req, res) => {
   const { messages } = req.body;
 
-  // #region agent log
-  _dbgLog({ runId: "initial", hypothesisId: "H2", location: "server.js:POST /api/get-suggestions", message: "suggestions preflight", data: { messagesIsArray: Array.isArray(messages), messagesCount: Array.isArray(messages) ? messages.length : null, groqApiKeyConfigured: !!process.env.GROQ_API_KEY } });
-  // #endregion
+  _dbgLog({
+    runId: "initial",
+    hypothesisId: "H2",
+    location: "server.js:POST /api/get-suggestions",
+    message: "suggestions preflight",
+    data: {
+      messagesIsArray: Array.isArray(messages),
+      messagesCount: Array.isArray(messages) ? messages.length : null,
+      groqApiKeyConfigured: !!process.env.GROQ_API_KEY,
+    },
+  });
 
   if (!Array.isArray(messages)) {
     return res
@@ -368,9 +424,17 @@ app.post("/api/get-suggestions", async (req, res) => {
     res.json({ suggestions: data.suggestions });
   } catch (error) {
     console.error("/api/get-suggestions error:", error);
-    // #region agent log
-    _dbgLog({ runId: "initial", hypothesisId: "H2", location: "server.js:POST /api/get-suggestions:catch", message: "suggestions handler failed", data: { errorName: error?.name || null, errorMessage: (error?.message || "").slice(0, 200) } });
-    // #endregion
+    _dbgLog({
+      runId: "initial",
+      hypothesisId: "H2",
+      location: "server.js:POST /api/get-suggestions:catch",
+      message: "suggestions handler failed",
+      data: {
+        errorName: error?.name || null,
+        errorMessage: (error?.message || "").slice(0, 200),
+      },
+    });
+
     res.status(500).json({ error: "Failed to fetch suggestions" });
   }
 });
@@ -383,15 +447,34 @@ const startServer = async () => {
       });
       isMongoConnected = true;
       console.log("MongoDB connected.");
-      // #region agent log
-      _dbgLog({ runId: "initial", hypothesisId: "H4", location: "server.js:startServer:success", message: "MongoDB connected", data: { isMongoConnected: true, dburiConfigured: !!dburi } });
+
+      _dbgLog({
+        runId: "initial",
+        hypothesisId: "H4",
+        location: "server.js:startServer:success",
+        message: "MongoDB connected",
+        data: { isMongoConnected: true, dburiConfigured: !!dburi },
+      });
       // #endregion
     } catch (error) {
       isMongoConnected = false;
-      console.warn("MongoDB connection failed, switching to local memory mode.");
+      console.warn(
+        "MongoDB connection failed, switching to local memory mode.",
+      );
       console.warn(error.message);
-      // #region agent log
-      _dbgLog({ runId: "initial", hypothesisId: "H4", location: "server.js:startServer:failure", message: "MongoDB connect failed", data: { isMongoConnected: false, dburiConfigured: !!dburi, errorName: error?.name || null, errorMessage: (error?.message || "").slice(0, 200) } });
+
+      _dbgLog({
+        runId: "initial",
+        hypothesisId: "H4",
+        location: "server.js:startServer:failure",
+        message: "MongoDB connect failed",
+        data: {
+          isMongoConnected: false,
+          dburiConfigured: !!dburi,
+          errorName: error?.name || null,
+          errorMessage: (error?.message || "").slice(0, 200),
+        },
+      });
       // #endregion
     }
   } else {
