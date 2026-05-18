@@ -4,7 +4,7 @@ const GitHubStrategy = require("passport-github2").Strategy;
 const User = require("../models/User");
 require("dotenv").config();
 const BACKEND_BASE_URL =
-  process.env.BACKEND_BASE_URL || "https://mernback-lsed.onrender.com";
+  (process.env.BACKEND_BASE_URL || "https://mernback-lsed.onrender.com").replace(/\/$/, "");
 
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   passport.use(
@@ -16,7 +16,8 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       },
       async (accessToken, refreshToken, profile, done) => {
         const { id, emails, displayName } = profile;
-        const email = emails[0].value;
+        const email = emails?.[0]?.value;
+        if (!email) return done(new Error("Google profile did not include an email"), null);
         try {
           let user = await User.findOne({ googleId: id });
           if (!user) {

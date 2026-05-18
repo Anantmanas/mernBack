@@ -9,8 +9,10 @@ const router = express.Router();
 require("dotenv").config();
 
 const memoryUsers = [];
+const FRONTEND_ORIGIN =
+  (process.env.FRONTEND_ORIGIN || "https://mernfront-agkd.onrender.com").replace(/\/$/, "");
 const FRONTEND_SUCCESS_URL =
-  process.env.FRONTEND_SUCCESS_URL || "http://localhost:3000/auth/success";
+  process.env.FRONTEND_SUCCESS_URL || `${FRONTEND_ORIGIN}/auth/success`;
 const hasGoogleOAuth =
   Boolean(process.env.GOOGLE_CLIENT_ID) &&
   Boolean(process.env.GOOGLE_CLIENT_SECRET);
@@ -208,7 +210,7 @@ router.get("/google/callback", (req, res, next) => {
       .status(503)
       .json({ msg: "Google OAuth unavailable while database is disconnected." });
   }
-  return passport.authenticate("google", (err, user) => {
+  return passport.authenticate("google", { session: false }, (err, user) => {
     if (err) {
       console.error("Google OAuth callback error:", err);
       return res.status(500).json({ msg: "Google authentication failed." });
@@ -251,7 +253,7 @@ router.get("/github/callback", (req, res, next) => {
       .status(503)
       .json({ msg: "GitHub OAuth unavailable while database is disconnected." });
   }
-  return passport.authenticate("github", (err, user) => {
+  return passport.authenticate("github", { session: false }, (err, user) => {
     if (err) {
       console.error("GitHub OAuth callback error:", err);
       return res.status(500).json({ msg: "GitHub authentication failed." });

@@ -15,7 +15,8 @@ const authMiddleware = require("./middleware/auth");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:3000";
+const FRONTEND_ORIGIN =
+  process.env.FRONTEND_ORIGIN || "https://mernfront-agkd.onrender.com";
 const uploadsDir = path.join(__dirname, "uploads");
 
 // #region agent log helper
@@ -64,13 +65,17 @@ app.use(
   }),
 );
 app.use(express.json());
+app.set("trust proxy", 1);
 app.use("/uploads", express.static(uploadsDir));
 app.use(
   session({
-    secret: process.env.SESSION_SECRET,
+    secret: process.env.SESSION_SECRET || process.env.JWT_SECRET || "chatroom_session_secret",
     resave: false,
     saveUninitialized: true,
-    cookie: { secure: process.env.NODE_ENV === "production" },
+    cookie: {
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    },
   }),
 );
 app.use(passport.initialize());
@@ -126,15 +131,18 @@ app.get("/messages", async (req, res) => {
   }
 });
 
-app.post("/messages", async (req, res) => {
+app.post("/messages", authMiddleware, async (req, res) => {
   try {
     const { user, message = "", fileUrl = "", fileName = "", fileType = "", fileSize = 0 } =
       req.body;
+    const senderId = String(req.user?.userId || "");
+    const chatHandle = await chatHandleFromTokenUser(req);
+    const displayUser = String(user || chatHandle || "").trim();
 
     // #region agent log
     _dbgLog({ runId: "initial", hypothesisId: "H4", location: "server.js:POST /messages", message: "message POST payload", data: { hasUser: !!user, hasMessage: !!(message || "").trim(), hasFileUrl: !!fileUrl, isMongoConnected, dburiConfigured: !!dburi } });
     // #endregion
-    if (!user || (!message.trim() && !fileUrl)) {
+    if (!displayUser || (!message.trim() && !fileUrl)) {
       return res
         .status(400)
         .json({ error: "User and either message or file are required" });
@@ -143,7 +151,8 @@ app.post("/messages", async (req, res) => {
     if (!isMongoConnected) {
       const newMessage = {
         _id: new mongoose.Types.ObjectId().toString(),
-        user,
+        user: displayUser,
+        senderId,
         message,
         fileUrl,
         fileName,
@@ -156,7 +165,8 @@ app.post("/messages", async (req, res) => {
     }
 
     const chatMessage = new ChatMessage({
-      user,
+      user: displayUser,
+      senderId,
       message,
       fileUrl,
       fileName,
@@ -222,6 +232,7 @@ app.post(
         const newMessage = {
           _id: new mongoose.Types.ObjectId().toString(),
           user,
+          senderId: String(req.user?.userId || ""),
           message: fileMessage,
           fileUrl,
           fileName: uploadedFile.originalname,
@@ -235,6 +246,7 @@ app.post(
 
       const chatMessage = new ChatMessage({
         user,
+        senderId: String(req.user?.userId || ""),
         message: fileMessage,
         fileUrl,
         fileName: uploadedFile.originalname,
@@ -255,16 +267,19 @@ app.delete("/messages/:id", authMiddleware, async (req, res) => {
   try {
     const messageId = req.params.id;
     const chatHandle = await chatHandleFromTokenUser(req);
+    const requesterId = String(req.user?.userId || "");
 
     if (!isMongoConnected) {
       const messageIndex = memoryMessages.findIndex((m) => m._id === messageId);
       if (messageIndex === -1) {
         return res.status(404).json({ error: "Message not found" });
       }
-      if (
-        normalizeHandle(memoryMessages[messageIndex].user) !==
-        normalizeHandle(chatHandle)
-      ) {
+      const message = memoryMessages[messageIndex];
+      const ownsById = message.senderId && String(message.senderId) === requesterId;
+      const ownsLegacy =
+        normalizeHandle(message.user) === normalizeHandle(chatHandle) ||
+        normalizeHandle(message.user) === normalizeHandle(req.user?.name);
+      if (!ownsById && !ownsLegacy) {
         return res
           .status(403)
           .json({ error: "Unauthorized to delete this message" });
@@ -280,7 +295,12 @@ app.delete("/messages/:id", authMiddleware, async (req, res) => {
     const message = await ChatMessage.findById(messageId);
     if (!message) return res.status(404).json({ error: "Message not found" });
 
-    if (normalizeHandle(message.user) !== normalizeHandle(chatHandle)) {
+    const ownsById = message.senderId && String(message.senderId) === requesterId;
+    const ownsLegacy =
+      normalizeHandle(message.user) === normalizeHandle(chatHandle) ||
+      normalizeHandle(message.user) === normalizeHandle(req.user?.name);
+
+    if (!ownsById && !ownsLegacy) {
       return res
         .status(403)
         .json({ error: "Unauthorized to delete this message" });

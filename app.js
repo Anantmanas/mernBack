@@ -11,7 +11,7 @@ const app = express();
 const PORT = Number(process.env.PORT) || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev_jwt_secret_change_me";
 const DB_URI = process.env.DB_URI;
-const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "http://localhost:3000";
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "https://mernfront-agkd.onrender.com/";
 
 app.use(
   cors({
