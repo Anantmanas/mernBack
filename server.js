@@ -191,11 +191,10 @@ const handleUpload = (req, res, next) => {
       return res.status(400).json({ error: err.message || "Upload failed" });
     }
     if (err) {
+      console.error("Upload error details:", err);
       return res.status(400).json({
-        error:
-          err.message === "Unsupported file type"
-            ? err.message
-            : "Upload failed",
+        error: err.message || err.toString() || "Upload failed",
+        details: err
       });
     }
     next();
