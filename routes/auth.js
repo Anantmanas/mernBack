@@ -9,6 +9,7 @@ const router = express.Router();
 require("dotenv").config();
 
 const memoryUsers = [];
+router.memoryUsers = memoryUsers;
 const FRONTEND_ORIGIN =
   (process.env.FRONTEND_ORIGIN || "https://mernfront-agkd.onrender.com").replace(/\/$/, "");
 const FRONTEND_SUCCESS_URL =

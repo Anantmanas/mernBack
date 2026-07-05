@@ -2,11 +2,17 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const passport = require("passport");
-const session = require("express-session");
 const path = require("path");
 const fs = require("fs");
 const multer = require("multer");
+const http = require("http");
+const socketIo = require("socket.io");
+const helmet = require("helmet");
+const morgan = require("morgan");
+const rateLimit = require("express-rate-limit");
 const authRoutes = require("./routes/auth");
+const { v2: cloudinary } = require("cloudinary");
+const { CloudinaryStorage } = require("multer-storage-cloudinary");
 require("dotenv").config();
 require("./config/passport");
 const ChatMessage = require("./models/Chat");
@@ -14,49 +20,32 @@ const User = require("./models/User");
 const authMiddleware = require("./middleware/auth");
 
 const app = express();
+const server = http.createServer(app);
 const PORT = process.env.PORT || 5000;
 const FRONTEND_ORIGIN =
   process.env.FRONTEND_ORIGIN || "https://mernfront-agkd.onrender.com";
 const uploadsDir = path.join(__dirname, "uploads");
 
-// #region agent log helper
-const _dbgLog = (payload) => {
-  try {
-    const line =
-      JSON.stringify({
-        sessionId: "7fa3ab",
-        timestamp: Date.now(),
-        ...payload,
-      }) + "\n";
-    fs.appendFileSync(path.join(__dirname, "../debug-7fa3ab.log"), line);
-  } catch (_) {}
-};
-// #endregion
+const io = socketIo(server, {
+  cors: {
+    origin: FRONTEND_ORIGIN,
+    credentials: true,
+    methods: ["GET", "POST"]
+  }
+});
 
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
-
-let isMongoConnected = false;
-const memoryMessages = [];
 
 const normalizeHandle = (s) =>
   String(s || "")
     .trim()
     .toLowerCase();
 
-/** Chat display name: custom username when set, else account name (matches client + delete checks) */
 async function chatHandleFromTokenUser(req) {
   const userId = req.user.userId;
   const fallback = String(req.user.name || "").trim();
-  if (!isMongoConnected) {
-    const mem =
-      typeof authRoutes.findMemoryUserById === "function"
-        ? authRoutes.findMemoryUserById(userId)
-        : null;
-    if (!mem) return fallback;
-    return String(mem.customUsername || mem.name || "").trim() || fallback;
-  }
   try {
     const u = await User.findById(userId).select("customUsername name").lean();
     if (!u) return fallback;
@@ -65,6 +54,9 @@ async function chatHandleFromTokenUser(req) {
     return fallback;
   }
 }
+
+app.use(helmet());
+app.use(morgan("dev"));
 
 app.use(
   cors({
@@ -75,22 +67,15 @@ app.use(
 app.use(express.json());
 app.set("trust proxy", 1);
 app.use("/uploads", express.static(uploadsDir));
-app.use(
-  session({
-    secret:
-      process.env.SESSION_SECRET ||
-      process.env.JWT_SECRET ||
-      "chatroom_session_secret",
-    resave: false,
-    saveUninitialized: true,
-    cookie: {
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-    },
-  }),
-);
 app.use(passport.initialize());
-app.use(passport.session());
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  message: "Too many attempts from this IP, please try again after 15 minutes",
+});
+app.use("/auth/login", authLimiter);
+app.use("/auth/signup", authLimiter);
 
 const dburi = process.env.DB_URI;
 
@@ -109,11 +94,17 @@ const allowedMimeTypes = new Set([
   "text/plain",
 ]);
 
-const uploadStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadsDir),
-  filename: (_req, file, cb) => {
-    const safeName = file.originalname.replace(/[^a-zA-Z0-9_.-]/g, "_");
-    cb(null, `${Date.now()}-${safeName}`);
+cloudinary.config({ 
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME, 
+  api_key: process.env.CLOUDINARY_API_KEY, 
+  api_secret: process.env.CLOUDINARY_API_SECRET 
+});
+
+const uploadStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "chat_uploads",
+    resource_type: "auto",
   },
 });
 
@@ -130,11 +121,15 @@ const upload = multer({
 
 app.get("/messages", async (req, res) => {
   try {
-    if (!isMongoConnected) {
-      return res.json([...memoryMessages].reverse());
-    }
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = (page - 1) * limit;
 
-    const messages = await ChatMessage.find().sort({ timestamp: -1 });
+    const messages = await ChatMessage.find()
+      .sort({ timestamp: -1 })
+      .skip(skip)
+      .limit(limit);
+      
     res.json(messages);
   } catch (error) {
     console.error(error);
@@ -156,40 +151,10 @@ app.post("/messages", authMiddleware, async (req, res) => {
     const chatHandle = await chatHandleFromTokenUser(req);
     const displayUser = String(user || chatHandle || "").trim();
 
-    _dbgLog({
-      runId: "initial",
-      hypothesisId: "H4",
-      location: "server.js:POST /messages",
-      message: "message POST payload",
-      data: {
-        hasUser: !!user,
-        hasMessage: !!(message || "").trim(),
-        hasFileUrl: !!fileUrl,
-        isMongoConnected,
-        dburiConfigured: !!dburi,
-      },
-    });
-
     if (!displayUser || (!message.trim() && !fileUrl)) {
       return res
         .status(400)
         .json({ error: "User and either message or file are required" });
-    }
-
-    if (!isMongoConnected) {
-      const newMessage = {
-        _id: new mongoose.Types.ObjectId().toString(),
-        user: displayUser,
-        senderId,
-        message,
-        fileUrl,
-        fileName,
-        fileType,
-        fileSize,
-        timestamp: new Date().toISOString(),
-      };
-      memoryMessages.push(newMessage);
-      return res.status(201).json(newMessage);
     }
 
     const chatMessage = new ChatMessage({
@@ -203,6 +168,8 @@ app.post("/messages", authMiddleware, async (req, res) => {
     });
 
     await chatMessage.save();
+    
+    io.emit("new_message", chatMessage);
 
     res.status(201).json(chatMessage);
   } catch (error) {
@@ -213,18 +180,6 @@ app.post("/messages", authMiddleware, async (req, res) => {
 
 const handleUpload = (req, res, next) => {
   upload.single("file")(req, res, (err) => {
-    if (err)
-      _dbgLog({
-        runId: "initial",
-        hypothesisId: "H3",
-        location: "server.js:handleUpload",
-        message: "multer error",
-        data: {
-          errCode: err?.code || null,
-          errMessage: (err?.message || "").slice(0, 200),
-        },
-      });
-    // #endregion
     if (err instanceof multer.MulterError) {
       if (err.code === "LIMIT_FILE_SIZE") {
         return res.status(400).json({ error: "File too large (max 10 MB)" });
@@ -249,20 +204,6 @@ app.post("/messages/upload", authMiddleware, handleUpload, async (req, res) => {
     const uploadedFile = req.file;
     const caption = (req.body?.message || "").trim();
 
-    _dbgLog({
-      runId: "initial",
-      hypothesisId: "H3",
-      location: "server.js:POST /messages/upload",
-      message: "upload handler inputs",
-      data: {
-        hasUser: !!user,
-        usernameLen: (user || "").length,
-        hasFile: !!uploadedFile,
-        fileMime: uploadedFile?.mimetype || null,
-        isMongoConnected,
-      },
-    });
-
     if (!user) {
       return res.status(401).json({ error: "Unauthorized" });
     }
@@ -271,25 +212,9 @@ app.post("/messages/upload", authMiddleware, handleUpload, async (req, res) => {
       return res.status(400).json({ error: "No file uploaded" });
     }
 
-    const fileUrl = `${req.protocol}://${req.get("host")}/uploads/${uploadedFile.filename}`;
+    const fileUrl = uploadedFile.path;
     const fileMessage =
       caption || `Shared a file: ${uploadedFile.originalname}`;
-
-    if (!isMongoConnected) {
-      const newMessage = {
-        _id: new mongoose.Types.ObjectId().toString(),
-        user,
-        senderId: String(req.user?.userId || ""),
-        message: fileMessage,
-        fileUrl,
-        fileName: uploadedFile.originalname,
-        fileType: uploadedFile.mimetype,
-        fileSize: uploadedFile.size,
-        timestamp: new Date().toISOString(),
-      };
-      memoryMessages.push(newMessage);
-      return res.status(201).json(newMessage);
-    }
 
     const chatMessage = new ChatMessage({
       user,
@@ -302,6 +227,9 @@ app.post("/messages/upload", authMiddleware, handleUpload, async (req, res) => {
     });
 
     await chatMessage.save();
+    
+    io.emit("new_message", chatMessage);
+    
     return res.status(201).json(chatMessage);
   } catch (error) {
     console.error("Error uploading file:", error);
@@ -314,26 +242,6 @@ app.delete("/messages/:id", authMiddleware, async (req, res) => {
     const messageId = req.params.id;
     const chatHandle = await chatHandleFromTokenUser(req);
     const requesterId = String(req.user?.userId || "");
-
-    if (!isMongoConnected) {
-      const messageIndex = memoryMessages.findIndex((m) => m._id === messageId);
-      if (messageIndex === -1) {
-        return res.status(404).json({ error: "Message not found" });
-      }
-      const message = memoryMessages[messageIndex];
-      const ownsById =
-        message.senderId && String(message.senderId) === requesterId;
-      const ownsLegacy =
-        normalizeHandle(message.user) === normalizeHandle(chatHandle) ||
-        normalizeHandle(message.user) === normalizeHandle(req.user?.name);
-      if (!ownsById && !ownsLegacy) {
-        return res
-          .status(403)
-          .json({ error: "Unauthorized to delete this message" });
-      }
-      memoryMessages.splice(messageIndex, 1);
-      return res.status(200).json({ success: "Message deleted successfully" });
-    }
 
     if (!mongoose.Types.ObjectId.isValid(messageId)) {
       return res.status(400).json({ error: "Invalid message ID" });
@@ -355,6 +263,8 @@ app.delete("/messages/:id", authMiddleware, async (req, res) => {
     }
 
     await ChatMessage.findByIdAndDelete(messageId);
+    
+    io.emit("message_deleted", messageId);
 
     res.status(200).json({ success: "Message deleted successfully" });
   } catch (error) {
@@ -368,18 +278,6 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 app.post("/api/get-suggestions", async (req, res) => {
   const { messages } = req.body;
-
-  _dbgLog({
-    runId: "initial",
-    hypothesisId: "H2",
-    location: "server.js:POST /api/get-suggestions",
-    message: "suggestions preflight",
-    data: {
-      messagesIsArray: Array.isArray(messages),
-      messagesCount: Array.isArray(messages) ? messages.length : null,
-      groqApiKeyConfigured: !!process.env.GROQ_API_KEY,
-    },
-  });
 
   if (!Array.isArray(messages)) {
     return res
@@ -424,64 +322,44 @@ app.post("/api/get-suggestions", async (req, res) => {
     res.json({ suggestions: data.suggestions });
   } catch (error) {
     console.error("/api/get-suggestions error:", error);
-    _dbgLog({
-      runId: "initial",
-      hypothesisId: "H2",
-      location: "server.js:POST /api/get-suggestions:catch",
-      message: "suggestions handler failed",
-      data: {
-        errorName: error?.name || null,
-        errorMessage: (error?.message || "").slice(0, 200),
-      },
-    });
-
     res.status(500).json({ error: "Failed to fetch suggestions" });
   }
 });
 
+io.on("connection", (socket) => {
+  console.log("New client connected", socket.id);
+  
+  socket.on("typing", (username) => {
+    socket.broadcast.emit("typing", username);
+  });
+  
+  socket.on("stop_typing", () => {
+    socket.broadcast.emit("stop_typing");
+  });
+
+  socket.on("disconnect", () => {
+    console.log("Client disconnected", socket.id);
+  });
+});
+
 const startServer = async () => {
-  if (dburi) {
-    try {
-      await mongoose.connect(dburi, {
-        serverSelectionTimeoutMS: 8000,
-      });
-      isMongoConnected = true;
-      console.log("MongoDB connected.");
-
-      _dbgLog({
-        runId: "initial",
-        hypothesisId: "H4",
-        location: "server.js:startServer:success",
-        message: "MongoDB connected",
-        data: { isMongoConnected: true, dburiConfigured: !!dburi },
-      });
-      // #endregion
-    } catch (error) {
-      isMongoConnected = false;
-      console.warn(
-        "MongoDB connection failed, switching to local memory mode.",
-      );
-      console.warn(error.message);
-
-      _dbgLog({
-        runId: "initial",
-        hypothesisId: "H4",
-        location: "server.js:startServer:failure",
-        message: "MongoDB connect failed",
-        data: {
-          isMongoConnected: false,
-          dburiConfigured: !!dburi,
-          errorName: error?.name || null,
-          errorMessage: (error?.message || "").slice(0, 200),
-        },
-      });
-      // #endregion
-    }
-  } else {
-    console.warn("DB_URI missing, starting in local memory mode.");
+  if (!dburi) {
+    console.error("DB_URI missing. Exiting...");
+    process.exit(1);
   }
 
-  app.listen(PORT, () => {
+  try {
+    await mongoose.connect(dburi, {
+      serverSelectionTimeoutMS: 8000,
+    });
+    console.log("MongoDB connected.");
+  } catch (error) {
+    console.error("MongoDB connection failed. Exiting...");
+    console.error(error.message);
+    process.exit(1);
+  }
+
+  server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
   });
 };

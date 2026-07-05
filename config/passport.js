@@ -18,21 +18,25 @@ const resolveBackendBaseUrl = () => {
 };
 
 const BACKEND_BASE_URL = resolveBackendBaseUrl();
-const oauthMemoryUsers = new Map();
 
 const isMongoConnected = () => require("mongoose").connection.readyState === 1;
 
 const memoryOAuthUser = ({ provider, providerId, email, name }) => {
+  const authRoutes = require("../routes/auth");
+  const memoryUsers = authRoutes.memoryUsers || [];
   const id = `${provider}:${providerId}`;
-  const existing = oauthMemoryUsers.get(id);
-  const user = {
-    id,
-    _id: id,
-    email,
-    name: name || "User",
-    customUsername: existing?.customUsername || "",
-  };
-  oauthMemoryUsers.set(id, user);
+  
+  let user = memoryUsers.find(u => String(u.id) === id);
+  if (!user) {
+    user = {
+      id,
+      _id: id,
+      email,
+      name: name || "User",
+      customUsername: "",
+    };
+    memoryUsers.push(user);
+  }
   return user;
 };
 
@@ -140,6 +144,11 @@ passport.serializeUser((user, done) => {
 
 passport.deserializeUser(async (id, done) => {
   try {
+    if (!isMongoConnected()) {
+      const authRoutes = require("../routes/auth");
+      const user = (authRoutes.memoryUsers || []).find(u => String(u.id) === String(id));
+      return done(null, user || null);
+    }
     const user = await User.findById(id);
     done(null, user);
   } catch (err) {
