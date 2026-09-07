@@ -7,6 +7,13 @@ const userSchema = new mongoose.Schema({
   googleId: { type: String },
   githubId: { type: String },
   customUsername: { type: String },
+  bio: { type: String, default: "" },
+  status: {
+    type: String,
+    enum: ["online", "away", "busy", "invisible"],
+    default: "online",
+  },
+  avatarUrl: { type: String, default: "" },
   timestamp: { type: Date, default: Date.now },
 });
 

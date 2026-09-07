@@ -8,13 +8,7 @@ const resolveBackendBaseUrl = () => {
   const configuredUrl = process.env.BACKEND_BASE_URL;
   const renderUrl = process.env.RENDER_EXTERNAL_URL;
   const fallbackUrl = "https://mernback-lsed.onrender.com";
-  const rawUrl = configuredUrl || renderUrl || fallbackUrl;
-
-  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(rawUrl)) {
-    return (renderUrl || fallbackUrl).replace(/\/$/, "");
-  }
-
-  return rawUrl.replace(/\/$/, "");
+  return (configuredUrl || renderUrl || fallbackUrl).replace(/\/$/, "");
 };
 
 const BACKEND_BASE_URL = resolveBackendBaseUrl();
@@ -25,8 +19,8 @@ const memoryOAuthUser = ({ provider, providerId, email, name }) => {
   const authRoutes = require("../routes/auth");
   const memoryUsers = authRoutes.memoryUsers || [];
   const id = `${provider}:${providerId}`;
-  
-  let user = memoryUsers.find(u => String(u.id) === id);
+
+  let user = memoryUsers.find((u) => String(u.id) === id);
   if (!user) {
     user = {
       id,
@@ -51,7 +45,11 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       async (accessToken, refreshToken, profile, done) => {
         const { id, emails, displayName } = profile;
         const email = emails?.[0]?.value;
-        if (!email) return done(new Error("Google profile did not include an email"), null);
+        if (!email)
+          return done(
+            new Error("Google profile did not include an email"),
+            null,
+          );
         try {
           if (!isMongoConnected()) {
             return done(
@@ -146,7 +144,9 @@ passport.deserializeUser(async (id, done) => {
   try {
     if (!isMongoConnected()) {
       const authRoutes = require("../routes/auth");
-      const user = (authRoutes.memoryUsers || []).find(u => String(u.id) === String(id));
+      const user = (authRoutes.memoryUsers || []).find(
+        (u) => String(u.id) === String(id),
+      );
       return done(null, user || null);
     }
     const user = await User.findById(id);
